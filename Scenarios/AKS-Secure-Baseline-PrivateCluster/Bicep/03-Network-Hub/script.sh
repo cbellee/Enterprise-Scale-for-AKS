@@ -7,12 +7,12 @@ logpath=/var/log/deploymentscriptlog
 #############################
 # Upgrading Linux Distribution
 #############################
-echo "#############################" >> $logpath
-echo "Upgrading Linux Distribution" >> $logpath
-echo "#############################" >> $logpath
+sudo echo "#############################" >> $logpath
+sudo echo "Upgrading Linux Distribution" >> $logpath
+sudo echo "#############################" >> $logpath
 sudo apt-get update >> $logpath
 sudo apt-get -y upgrade >> $logpath
-echo " " >> $logpath
+sudo echo " " >> $logpath
 
 #############################
 #Install Azure CLI

@@ -1,0 +1,136 @@
+LOCATION=australiaeast
+
+# aad groups
+AKS_DEVGRP=aks-dev-grp
+AKS_OPSGRP=aks-ops-grp
+
+# register required providers
+az provider register --namespace Microsoft.OperationsManagement
+az provider register --namespace Microsoft.OperationalInsights
+az feature register --name EnablePodIdentityPreview --namespace Microsoft.ContainerService
+az feature register --namespace "Microsoft.ContainerService" --name "AKS-AzureKeyVaultSecretsProvider"
+az provider register --namespace Microsoft.ContainerService
+
+# create requied AAD groups
+AKS_DEVGRP_OBJECT_ID=$(az ad group create --display-name $AKS_DEVGRP --mail-nickname $AKS_DEVGRP --query 'objectId' -o tsv)
+AKS_OPSGRP_OBJECT_ID=$(az ad group create --display-name $AKS_OPSGRP --mail-nickname $AKS_OPSGRP --query 'objectId' -o tsv)
+
+# network hub deployment
+cd ./Scenarios/AKS-Secure-Baseline-PrivateCluster/Bicep/03-Network-Hub
+
+az deployment sub create -n "ESLZ-HUB-AKS" -l $LOCATION -f main.bicep -p parameters-main.json
+az deployment sub create -n "ESLZ-AKS-HUB-UDR" -l $LOCATION -f updateUDR.bicep -p parameters-updateUDR.json
+az deployment sub create -n "ESLZ-HUB-VM" -l $LOCATION -f deploy-vm.bicep -p parameters-deploy-vm.json
+
+# network LZ deployment
+cd ../04-Network-LZ
+
+az deployment sub create -n "ESLZ-Spoke-AKS" -l $LOCATION -f main.bicep -p parameters-main.json
+# wait here until complete...
+
+az deployment sub create -n "ESLZ-AKS-SPOKE-UDRNSG" -l $LOCATION -f updateUDR-NSG.bicep -p parameters-updateUDR-NSG.json
+
+# AKS supporting
+cd ../05-AKS-supporting
+
+az deployment sub create -n "ESLZ-AKS-Supporting" -l $LOCATION -f main.bicep -p parameters-main.json
+
+# AKS
+cd ../06-AKS-cluster
+
+acrName=$(az deployment sub show -n "ESLZ-AKS-Supporting" --query properties.outputs.acrName.value -o tsv)
+keyVaultName=$(az deployment sub show -n "ESLZ-AKS-Supporting" --query properties.outputs.keyvaultName.value -o tsv)
+bastionName=$(az deployment group show -n "bastion" -g "ESLZ-HUB" --query 'name' -o tsv)
+jumpBoxId=$(az deployment group show -n "jumpbox" -g "ESLZ-HUB" --query 'id' -o tsv)
+
+az deployment sub create \
+    -n "ESLZ-AKS-CLUSTER" \
+    -l $LOCATION \
+    -f main.bicep \
+    -p parameters-main.json \
+    -p acrName=$acrName \
+    -p keyvaultName=$keyVaultName \
+    -p aksuseraccessprincipalId=$AKS_DEVGRP_OBJECT_ID \
+    -p aksadminaccessprincipalId=$AKS_OPSGRP_OBJECT_ID \
+    -p k8sVersion='1.21.7'
+
+az network firewall network-rule create \
+    --collection-name 'VM-egress' \
+    --destination-ports '*' \
+    --firewall-name 'AZFW' \
+    --name 'Allow-Internet' \
+    --protocols Any \
+    --resource-group 'ESLZ-HUB' \
+    --action Allow \
+    --dest-addr '*' \
+    --priority 201 \
+    --source-addresses '10.0.3.4/32'
+
+# add az cli ssh extension
+az extension add --name ssh
+
+az network bastion ssh \
+    --name $bastionName \
+    --resource-group "ESLZ-HUB" \
+    --target-resource-id $jumpBoxId \
+    --auth-type "ssh-key" \
+    --username "azureuser" \
+    --ssh-key "~/.ssh/id_rsa"
+
+#############################
+# Install tools
+#############################
+logpath=/var/log/deploymentscriptlog
+
+#############################
+# Upgrading Linux Distribution
+#############################
+sudo echo "#############################" >>$logpath
+sudo echo "Upgrading Linux Distribution" >>$logpath
+sudo echo "#############################" >>$logpath
+sudo apt-get update >>$logpath
+sudo apt-get -y upgrade >>$logpath
+sudo echo " " >>$logpath
+
+#############################
+#Install Azure CLI
+#############################
+echo "#############################" >>$logpath
+echo "Installing Azure CLI" >>$logpath
+echo "#############################" >>$logpath
+curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+
+#############################
+#Install Docker
+#############################
+echo "#############################" >>$logpath
+echo "Installing Docker" >>$logpath
+echo "#############################" >>$logpath
+wget -qO- https://get.docker.com/ | sh >>$logpath
+sudo usermod -aG docker $1
+echo " " >>$logpath
+
+#############################
+#Install Kubectl
+#############################
+echo "#############################" >>$logpath
+echo "Installing Kubectl" >>$logpath
+echo "#############################" >>$logpath
+sudo apt-get update
+sudo apt-get install -y apt-transport-https ca-certificates curl
+sudo curl -fsSLo /usr/share/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg
+echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+sudo apt-get update
+sudo apt-get install -y kubectl
+
+#############################
+#Install Helm
+#############################
+echo "#############################" >>$logpath
+echo "Installing Helm" >>$logpath
+echo "#############################" >>$logpath
+curl https://baltocdn.com/helm/signing.asc | sudo apt-key add -
+sudo apt-get install apt-transport-https --yes
+echo "deb https://baltocdn.com/helm/stable/debian/ all main" | sudo tee /etc/apt/sources.list.d/helm-stable-debian.list
+sudo apt-get update
+sudo apt-get install helm

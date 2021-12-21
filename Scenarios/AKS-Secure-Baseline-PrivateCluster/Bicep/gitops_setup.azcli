@@ -1,0 +1,13 @@
+# create gitops connection
+
+az k8s-configuration flux create \
+   --name cluster-config \
+   --cluster-name eslzakscluster \
+   --namespace cluster-config \
+   --resource-group "ESLZ-SPOKE" \
+   -u  git@github.com:cbellee/arc-cicd-demo-gitops.git \
+   --ssh-private-key-file ~/.ssh/id_rsa \
+   --scope cluster \
+   --cluster-type managedClusters \
+   --branch master \
+   --kustomization name=cluster-config prune=true path=arc-cicd-cluster/manifests

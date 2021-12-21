@@ -11,6 +11,7 @@ param aksadminaccessprincipalId string
 param aksIdentityName string
 param acrName string //User to provide each time
 param keyvaultName string //user to provide each time
+param k8sVersion string
 
 module rg 'modules/resource-group/rg.bicep' = {
   name: rgName
@@ -64,6 +65,7 @@ module aksCluster 'modules/aks/privateaks.bicep' = {
     aadGroupdIds: [
       aksadminaccessprincipalId
     ]
+    k8sVersion: k8sVersion
     clusterName: clusterName
     logworkspaceid: akslaworkspace.outputs.laworkspaceId
     privateDNSZoneId: pvtdnsAKSZone.id

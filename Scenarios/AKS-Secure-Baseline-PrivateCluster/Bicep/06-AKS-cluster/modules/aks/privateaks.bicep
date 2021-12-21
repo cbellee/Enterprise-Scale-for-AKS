@@ -5,6 +5,7 @@ param aadGroupdIds array
 param subnetId string
 param identity object
 param appGatewayResourceId string
+param k8sVersion string = '1.21.7'
 //param appGatewayIdentityResourceId string
 
 resource aksCluster 'Microsoft.ContainerService/managedClusters@2021-07-01' = {
@@ -15,7 +16,7 @@ resource aksCluster 'Microsoft.ContainerService/managedClusters@2021-07-01' = {
     userAssignedIdentities: identity
   }
   properties: {
-    kubernetesVersion: '1.21.1'
+    kubernetesVersion: k8sVersion
     nodeResourceGroup: '${clusterName}-aksInfraRG'
     podIdentityProfile: {
       enabled: true

@@ -28,6 +28,9 @@
     },
     "aksIdentityName": {
       "value": "aksIdentity"
+    },
+    "k8sVersion": {
+      "value": "1.21.7"
     }
   }
 }
